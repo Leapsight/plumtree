@@ -656,8 +656,8 @@ dets_filename({Prefix, SubPrefix}=FullPrefix) ->
 dets_filename_part(Part) when is_atom(Part) ->
     dets_filename_part(list_to_binary(atom_to_list(Part)));
 dets_filename_part(Part) when is_binary(Part) ->
-    <<MD5Int:128/integer>> = riak_core_util:md5(Part),
-    riak_core_util:integer_to_list(MD5Int, 16).
+    <<MD5Int:128/integer>> = plumtree_util:md5(Part),
+    plumtree_util:integer_to_list(MD5Int, 16).
 
 dets_filename_trailer(FullPrefix) ->
     [dets_filename_trailer_part(Part) || Part <- tuple_to_list(FullPrefix)].
