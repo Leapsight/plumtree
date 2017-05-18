@@ -508,7 +508,28 @@ build_tree(N, Nodes, Opts) ->
                     end, {[], tl(Expand)}, Nodes),
     orddict:from_list(Tree).
 
+orddict_delta(A, B) ->
+    %% Pad both A and B to the same length
+    DummyA = [{Key, '$none'} || {Key, _} <- B],
+    A2 = orddict:merge(fun(_, Value, _) ->
+                               Value
+                       end, A, DummyA),
 
+    DummyB = [{Key, '$none'} || {Key, _} <- A],
+    B2 = orddict:merge(fun(_, Value, _) ->
+                               Value
+                       end, B, DummyB),
+
+    %% Merge and filter out equal values
+    Merged = orddict:merge(fun(_, AVal, BVal) ->
+                                   {AVal, BVal}
+                           end, A2, B2),
+    Diff = orddict:filter(fun(_, {Same, Same}) ->
+                                  false;
+                             (_, _) ->
+                                  true
+                          end, Merged),
+    Diff.
 
 shuffle(L) ->
     N = 134217727, %% Largest small integer on 32-bit Erlang

@@ -1,7 +1,7 @@
 {application, plumtree,
  [
   {description, "Epidemic Broadcast Trees"},
-  {vsn, "0.0.1"},
+  {vsn, "0.0.2"},
   {registered, []},
   {applications, [
                   kernel,
@@ -10,8 +10,7 @@
                   lager,
                   eleveldb,
                   riak_dt,
-                  time_compat,
-                  lasp_support
+                  time_compat
                  ]},
   {mod, { plumtree_app, []}},
   {modules, []},
