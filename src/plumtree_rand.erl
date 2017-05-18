@@ -1,4 +1,4 @@
-%% Original: https://raw.githubusercontent.com/project-fifo/riak_core/fifo-0.9.2/src/riak_core_rand.erl
+%% Original: https://raw.githubusercontent.com/project-fifo/riak_core/fifo-0.9.2/src/plumtree_rand.erl
 %% Generalized random module that offers a backwards compatible API
 %% around some of the changes in rand, crypto and for time units.
 

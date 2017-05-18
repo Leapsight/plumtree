@@ -73,8 +73,8 @@
          }).
 
 -record(metadata_iterator, {
-          prefix :: metadata_prefix(),
-          match  :: term(),
+          prefix :: metadata_prefix() | undefined,
+          match  :: term() | undefined,
           pos    :: term(),
           obj    :: {metadata_key(), metadata_object()} | undefined,
           done   :: boolean(),
@@ -321,7 +321,9 @@ exchange(Peer) ->
 
 %% @private
 -spec init([mm_opts()]) -> {ok, #state{}} |
-                           {stop, no_data_dir}.
+                           {ok, #state{}, non_neg_integer() | infinity} |
+                           ignore |
+                           {stop, term()}.
 init([Opts]) ->
     case data_root(Opts) of
         undefined ->
@@ -340,7 +342,13 @@ init([Opts]) ->
     end.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+                         {reply, term(), #state{}} |
+                         {reply, term(), #state{}, non_neg_integer()} |
+                         {noreply, #state{}} |
+                         {noreply, #state{}, non_neg_integer()} |
+                         {stop, term(), term(), #state{}} |
+                         {stop, term(), #state{}}.
 handle_call({put, PKey, Context, ValueOrFun}, _From, State) ->
     {Result, NewState} = read_modify_write(PKey, Context, ValueOrFun, State),
     {reply, Result, NewState};
@@ -374,12 +382,16 @@ handle_call({is_stale, PKey, Context}, _From, State) ->
     {reply, IsStale, State}.
 
 %% @private
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_cast(term(), #state{}) -> {noreply, #state{}} |
+                                       {noreply, #state{}, non_neg_integer()} |
+                                       {stop, term(), #state{}}.
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
--spec handle_info({'DOWN', _, 'process', _, _}, #state{}) -> {noreply, #state{}}.
+-spec handle_info(term(), #state{}) -> {noreply, #state{}} |
+                                       {noreply, #state{}, non_neg_integer()} |
+                                       {stop, term(), #state{}}.
 handle_info({'DOWN', ItRef, process, _Pid, _Reason}, State) ->
     close_remote_iterator(ItRef, State),
     {noreply, State}.
@@ -644,8 +656,8 @@ dets_filename({Prefix, SubPrefix}=FullPrefix) ->
 dets_filename_part(Part) when is_atom(Part) ->
     dets_filename_part(list_to_binary(atom_to_list(Part)));
 dets_filename_part(Part) when is_binary(Part) ->
-    <<MD5Int:128/integer>> = crypto:hash(md5, (Part)),
-    integer_to_list(MD5Int, 16).
+    <<MD5Int:128/integer>> = riak_core_util:md5(Part),
+    riak_core_util:integer_to_list(MD5Int, 16).
 
 dets_filename_trailer(FullPrefix) ->
     [dets_filename_trailer_part(Part) || Part <- tuple_to_list(FullPrefix)].
