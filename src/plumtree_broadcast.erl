@@ -60,13 +60,13 @@
           %% Initially trees rooted at each node are the same.
           %% Portions of that tree belonging to this node are
           %% shared in this set.
-          common_eagers :: ordsets:ordset(nodename()),
+          common_eagers :: ordsets:ordset(nodename()) | undefined,
 
           %% Initially trees rooted at each node share the same lazy links.
           %% Typically this set will contain a single element. However, it may
           %% contain more in large clusters and may be empty for clusters with
           %% less than three nodes.
-          common_lazys  :: ordsets:ordset(nodename()),
+          common_lazys  :: ordsets:ordset(nodename()) | undefined,
 
           %% A mapping of sender node (root of each broadcast tree)
           %% to this node's portion of the tree. Elements are
@@ -74,14 +74,14 @@
           %% propogate to this node. Nodes that are never the
           %% root of a message will never have a key added to
           %% `eager_sets'
-          eager_sets    :: [{nodename(), ordsets:ordset(nodename())}],
+          eager_sets    :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
 
           %% A Mapping of sender node (root of each spanning tree)
           %% to this node's set of lazy peers. Elements are added
           %% to this structure as messages rooted at a node
           %% propogate to this node. Nodes that are never the root
           %% of a message will never have a key added to `lazy_sets'
-          lazy_sets     :: [{nodename(), ordsets:ordset(nodename())}],
+          lazy_sets     :: [{nodename(), ordsets:ordset(nodename())}] | undefined,
 
           %% Lazy messages that have not been acked. Messages are added to
           %% this set when a node is sent a lazy message (or when it should be
@@ -99,7 +99,7 @@
 
           %% Set of all known members. Used to determine
           %% which members have joined and left during a membership update
-          all_members   :: ordsets:ordset(nodename())
+          all_members   :: ordsets:ordset(nodename()) | undefined
          }).
 
 %%%===================================================================
@@ -220,12 +220,15 @@ debug_get_tree(Root, Nodes) ->
 %%%===================================================================
 
 %% @private
--spec init([[any()],...]) -> {ok, #state{}}.
+-spec init([[nodename()]]) -> {ok, #state{}} |
+                                  {ok, #state{}, non_neg_integer() | infinity} |
+                                  ignore |
+                                  {stop, term()}.
 init([AllMembers, InitEagers, InitLazys, Mods]) ->
     schedule_lazy_tick(),
     schedule_exchange_tick(),
     State1 =  #state{
-                 outstanding = orddict:new(),
+                 outstanding   = orddict:new(),
                  mods = lists:usort(Mods),
                  exchanges=[]
                 },
@@ -233,7 +236,13 @@ init([AllMembers, InitEagers, InitLazys, Mods]) ->
     {ok, State2}.
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+                         {reply, term(), #state{}} |
+                         {reply, term(), #state{}, non_neg_integer()} |
+                         {noreply, #state{}} |
+                         {noreply, #state{}, non_neg_integer()} |
+                         {stop, term(), term(), #state{}} |
+                         {stop, term(), #state{}}.
 handle_call({get_peers, Root}, _From, State) ->
     EagerPeers = all_peers(Root, State#state.eager_sets, State#state.common_eagers),
     LazyPeers = all_peers(Root, State#state.lazy_sets, State#state.common_lazys),
@@ -247,7 +256,9 @@ handle_call({cancel_exchanges, WhichExchanges}, _From, State) ->
     {reply, Cancelled, State}.
 
 %% @private
--spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
+-spec handle_cast(term(), #state{}) -> {noreply, #state{}} |
+                                       {noreply, #state{}, non_neg_integer()} |
+                                       {stop, term(), #state{}}.
 handle_cast({broadcast, MessageId, Message, Mod}, State) ->
     State1 = eager_push(MessageId, Message, Mod, State),
     State2 = schedule_lazy_push(MessageId, Mod, State1),
@@ -285,8 +296,9 @@ handle_cast({update, LocalState}, State=#state{all_members=BroadcastMembers}) ->
     {noreply, State2}.
 
 %% @private
--spec handle_info('exchange_tick' | 'lazy_tick' | {'DOWN', _, 'process', _, _}, #state{}) ->
-    {noreply, #state{}}.
+-spec handle_info(term(), #state{}) -> {noreply, #state{}} |
+                                       {noreply, #state{}, non_neg_integer()} |
+                                       {stop, term(), #state{}}.
 handle_info(lazy_tick, State) ->
     schedule_lazy_tick(),
     _ = send_lazy(State),
@@ -407,10 +419,7 @@ maybe_exchange(Peer, State=#state{mods=[Mod | _],exchanges=Exchanges}) ->
     case BelowLimit and FreeMod of
         true -> exchange(Peer, State);
         false -> State
-    end;
-maybe_exchange(_Peer, State=#state{mods=[]}) ->
-    %% No registered handler.
-    State.
+    end.
 
 exchange(Peer, State=#state{mods=[Mod | Mods],exchanges=Exchanges}) ->
     State1 = case Mod:exchange(Peer) of
@@ -459,6 +468,7 @@ exchange_filter({mod, Mod}) ->
             Mod =:= ExchangeMod
     end.
 
+
 %% picks random root uniformly
 random_root(#state{all_members=Members}) ->
     random_other_node(Members).
@@ -483,7 +493,7 @@ random_other_node(OrdSet) ->
     case Size of
         0 -> undefined;
         _ ->
-            lists:nth(random:uniform(Size),
+            lists:nth(plumtree_rand:uniform(Size),
                      ordsets:to_list(OrdSet))
     end.
 
@@ -598,19 +608,19 @@ init_peers(Members) ->
             %% with cycles. it will be adjusted as needed
             Tree = plumtree_util:build_tree(1, Members, [cycles]),
             InitEagers = orddict:fetch(node(), Tree),
-            InitLazys  = [lists:nth(random:uniform(N - 2), Members -- [node() | InitEagers])];
+            InitLazys  = [lists:nth(plumtree_rand:uniform(N - 2), Members -- [node() | InitEagers])];
         N when N < 10 ->
             %% 5 to 9 members, start with gossip tree used by
             %% riak_core_gossip. it will be adjusted as needed
             Tree = plumtree_util:build_tree(2, Members, [cycles]),
             InitEagers = orddict:fetch(node(), Tree),
-            InitLazys  = [lists:nth(random:uniform(N - 3), Members -- [node() | InitEagers])];
+            InitLazys  = [lists:nth(plumtree_rand:uniform(N - 3), Members -- [node() | InitEagers])];
         N ->
             %% 10 or more members, use a tree similar to riak_core_gossip
             %% but with higher fanout (larger initial eager set size)
             NEagers = round(math:log(N) + 1),
             Tree = plumtree_util:build_tree(NEagers, Members, [cycles]),
             InitEagers = orddict:fetch(node(), Tree),
-            InitLazys  = [lists:nth(random:uniform(N - (NEagers + 1)), Members -- [node() | InitEagers])]
+            InitLazys  = [lists:nth(plumtree_rand:uniform(N - (NEagers + 1)), Members -- [node() | InitEagers])]
     end,
     {InitEagers, InitLazys}.
