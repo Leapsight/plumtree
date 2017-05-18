@@ -21,15 +21,22 @@
 %% @doc Various functions that are useful throughout Riak.
 -module(plumtree_util).
 
+%% REQUIRED
+-export([build_tree/3]).
+-export([integer_to_list/2]).
+-export([md5/1]).
+-export([orddict_delta/2]).
+-export([sha/1]).
+
+%% USEFULL
+
 -export([moment/0]).
 -export([make_tmp_dir/0]).
 -export([replace_file/2]).
 -export([compare_dates/2]).
--export([integer_to_list/2]).
 -export([unique_id_62/0]).
 -export([str_to_node/1]).
 -export([mkclientid/1]).
--export([build_tree/3]).
 -export([safe_rpc/4]).
 -export([safe_rpc/5]).
 -export([rpc_every_member/4]).
@@ -48,8 +55,6 @@
 -export([multicall_ann/5]).
 -export([shuffle/1]).
 -export([is_arch/1]).
--export([sha/1]).
--export([md5/1]).
 -export([proxy_spawn/1]).
 -export([proxy/2]).
 
