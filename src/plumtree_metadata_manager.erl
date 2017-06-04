@@ -552,7 +552,7 @@ read_merge_write(PKey, Obj, State) ->
     case plumtree_metadata_object:reconcile(Obj, Existing) of
         false -> {false, State};
         {true, Reconciled} ->
-            {_, NewState} = store(PKey, Reconciled, State),
+            {Reconciled, NewState} = store(PKey, Reconciled, State),
             {true, NewState}
     end.
 
@@ -565,6 +565,7 @@ store({FullPrefix, Key}=PKey, Metadata, State) ->
     ets:insert(ets_tab(FullPrefix), Objs),
     plumtree_metadata_hashtree:insert(PKey, Hash),
     ok = dets_insert(dets_tabname(FullPrefix), Objs),
+    plumtree_metadata_events:update(Metadata),
     {Metadata, State}.
 
 read({FullPrefix, Key}) ->

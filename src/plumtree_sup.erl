@@ -40,6 +40,7 @@ init([]) ->
                  ?CHILD(plumtree_peer_service_events, worker),
                  ?CHILD(plumtree_broadcast, worker),
                  ?CHILD(plumtree_metadata_manager, worker),
+                 ?CHILD(plumtree_metadata_events, worker),
                  ?CHILD(plumtree_metadata_hashtree, worker)
                  ]),
     RestartStrategy = {one_for_one, 10, 10},
