@@ -34,7 +34,9 @@
          lock/2,
          update/0,
          update/1,
-         compare/3]).
+         compare/3,
+         reset/0,
+         reset/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -42,19 +44,24 @@
 -include("plumtree_metadata.hrl").
 
 -define(SERVER, ?MODULE).
+%% Time from build to expiration of tree, in millseconds
+-define(DEFAULT_TTL, 604800000). %% 1 week
 
 -record(state, {
-          %% the tree managed by this process
-          tree  :: hashtree_tree:tree(),
+    data_root,
+    %% the tree managed by this process
+    tree  :: hashtree_tree:tree(),
 
-          %% whether or not the tree has been built or a monitor ref
-          %% if the tree is being built
-          built :: boolean() | reference(),
+    %% whether or not the tree has been built or a monitor ref
+    %% if the tree is being built
+    built :: boolean() | reference(),
+    build_timestamp :: non_neg_integer() | undefined,
+    ttl :: non_neg_integer(),
 
-          %% a monitor reference for a process that currently holds a
-          %% lock on the tree. undefined otherwise
-          lock  :: {internal | external, reference()} | undefined
-         }).
+    %% a monitor reference for a process that currently holds a
+    %% lock on the tree. undefined otherwise
+    lock  :: {internal | external, reference()} | undefined
+}).
 
 %%%===================================================================
 %%% API
@@ -163,18 +170,35 @@ update(Node) ->
 compare(RemoteFun, HandlerFun, HandlerAcc) ->
     gen_server:call(?SERVER, {compare, RemoteFun, HandlerFun, HandlerAcc}, infinity).
 
+
+%% -----------------------------------------------------------------------------
+%% @doc Destroys all local node's hashtrees and rebuilds them.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec reset() -> ok.
+reset() ->
+    reset(node()).
+
+
+%% -----------------------------------------------------------------------------
+%% @doc Destroys all node's hashtrees and rebuilds them.
+%% @end
+%% -----------------------------------------------------------------------------
+-spec reset(node()) -> ok.
+reset(Node) ->
+    gen_server:cast({?SERVER, Node}, reset).
+
+
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
 init([DataRoot]) ->
     schedule_tick(),
-    Tree = hashtree_tree:new(plumtree, [{data_dir, DataRoot}, {num_levels, 2}]),
-    State = #state{tree=Tree,
-                   built=false,
-                   lock=undefined},
-    State1 = build_async(State),
-    {ok, State1}.
+    State = init_async(#state{data_root = DataRoot}),
+    {ok, State}.
+
 
 handle_call({compare, RemoteFun, HandlerFun, HandlerAcc}, From, State) ->
     maybe_compare_async(From, RemoteFun, HandlerFun, HandlerAcc, State),
@@ -200,6 +224,13 @@ handle_call({insert, PKey, Hash, IfMissing}, _From, State=#state{tree=Tree}) ->
     Tree1 = hashtree_tree:insert(Prefixes, Key, Hash, [{if_missing, IfMissing}], Tree),
     {reply, ok, State#state{tree=Tree1}}.
 
+
+handle_cast(reset, State0) ->
+    _ = lager:info(
+        "Resetting hashtree at node ~p due to user request", [node()]),
+    State = reset_async(State0),
+    {noreply, State};
+
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -215,9 +246,10 @@ handle_info({'DOWN', LockRef, process, _Pid, _Reason}, State=#state{lock={_, Loc
     {noreply, State1};
 handle_info(tick, State) ->
     schedule_tick(),
-    State1 = maybe_build_async(State),
-    State2 = maybe_update_async(State1),
-    {noreply, State2}.
+    State1 = maybe_reset_async(State),
+    State2 = maybe_build_async(State1),
+    State3 = maybe_update_async(State2),
+    {noreply, State3}.
 
 terminate(_Reason, State) ->
     hashtree_tree:destroy(State#state.tree),
@@ -229,6 +261,23 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+
+init_async(#state{data_root = DataRoot} = State0) ->
+    Tree = hashtree_tree:new(plumtree, [{data_dir, DataRoot}, {num_levels, 2}]),
+    TTL = application:get_env(plumtree, aae_hashtree_ttl, ?DEFAULT_TTL),
+    State = State0#state{tree=Tree,
+                   built=false,
+                   build_timestamp=undefined,
+                   ttl=TTL,
+                   lock=undefined},
+    build_async(State).
+
+reset_async(State0) ->
+    _ = hashtree_tree:destroy(State0#state.tree),
+    schedule_tick(),
+    init_async(State0).
+
 
 %% @private
 maybe_compare_async(From, RemoteFun, HandlerFun, HandlerAcc,
@@ -288,6 +337,18 @@ update_async(From, Lock, State=#state{tree=Tree}) ->
 maybe_build_async(State=#state{built=false}) ->
     build_async(State);
 maybe_build_async(State) ->
+    State.
+
+maybe_reset_async(#state{built = true} = State) ->
+    Diff = timer:now_diff(os:timestamp(), State#state.build_timestamp),
+    case Diff >= State#state.ttl of
+        true ->
+            reset_async(State);
+        false ->
+            State
+    end;
+
+maybe_reset_async(State) ->
     State.
 
 %% @private
