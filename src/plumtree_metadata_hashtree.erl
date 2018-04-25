@@ -389,7 +389,7 @@ build(PrefixIt, ObjIt) ->
 
 %% @private
 build_done(State) ->
-    State#state{built=true}.
+    State#state{built = true, build_timestamp = os:timestamp()}.
 
 %% @private
 build_error(State) ->
