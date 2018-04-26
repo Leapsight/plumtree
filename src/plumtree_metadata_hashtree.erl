@@ -334,7 +334,7 @@ update_async(From, Lock, State=#state{tree=Tree}) ->
     State1#state{tree=Tree2}.
 
 %% @private
-maybe_build_async(State=#state{built=false}) ->
+maybe_build_async(State=#state{built = false}) ->
     build_async(State);
 maybe_build_async(State) ->
     State.
@@ -353,8 +353,13 @@ maybe_reset_async(State) ->
 
 %% @private
 build_async(State) ->
-    {_Pid, Ref} = spawn_monitor(fun build/0),
-    State#state{built=Ref}.
+    case application:get_env(plumtree, aae_enabled, true) of
+        true ->
+            {_Pid, Ref} = spawn_monitor(fun build/0),
+            State#state{built=Ref};
+        false ->
+            State
+    end.
 
 %% @private
 build() ->

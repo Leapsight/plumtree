@@ -151,7 +151,7 @@ broadcast(Broadcast, Mod) ->
     {MessageId, Payload} = Mod:broadcast_data(Broadcast),
     gen_server:cast(?SERVER, {broadcast, MessageId, Payload, Mod}).
 
-%% @doc Notifies broadcast server of membership update 
+%% @doc Notifies broadcast server of membership update
 update(LocalState) ->
     gen_server:cast(?SERVER, {update, LocalState}).
 
@@ -226,7 +226,7 @@ debug_get_tree(Root, Nodes) ->
                                   {stop, term()}.
 init([AllMembers, InitEagers, InitLazys, Mods]) ->
     schedule_lazy_tick(),
-    schedule_exchange_tick(),
+    maybe_schedule_exchange_tick(),
     State1 =  #state{
                  outstanding   = orddict:new(),
                  mods = lists:usort(Mods),
@@ -304,7 +304,7 @@ handle_info(lazy_tick, State) ->
     _ = send_lazy(State),
     {noreply, State};
 handle_info(exchange_tick, State) ->
-    schedule_exchange_tick(),
+    maybe_schedule_exchange_tick(),
     State1 = maybe_exchange(State),
     {noreply, State1};
 handle_info({'DOWN', Ref, process, _Pid, _Reason}, State=#state{exchanges=Exchanges}) ->
@@ -404,9 +404,14 @@ send_lazy(MessageId, Mod, Round, Root, Peer) ->
     send({i_have, MessageId, Mod, Round, Root, node()}, Peer).
 
 maybe_exchange(State) ->
-    Root = random_root(State),
-    Peer = random_peer(Root, State),
-    maybe_exchange(Peer, State).
+    case application:get_env(plumtree, aae_enabled, true) of
+        true ->
+            Root = random_root(State),
+            Peer = random_peer(Root, State),
+            maybe_exchange(Peer, State);
+        false ->
+            State
+    end.
 
 maybe_exchange(undefined, State) ->
     State;
@@ -576,6 +581,14 @@ send(Msg, P) ->
 
 schedule_lazy_tick() ->
     schedule_tick(lazy_tick, broadcast_lazy_timer, 1000).
+
+maybe_schedule_exchange_tick() ->
+    case application:get_env(plumtree, aae_enabled, true) of
+        true ->
+            schedule_exchange_tick();
+        false ->
+            ok
+    end.
 
 schedule_exchange_tick() ->
     schedule_tick(exchange_tick, broadcast_exchange_timer, 10000).
