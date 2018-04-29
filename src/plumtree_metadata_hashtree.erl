@@ -363,8 +363,13 @@ build_async(State) ->
 
 %% @private
 build() ->
+    _ = lager:info(
+        "Starting hashtree build at node ~p.", [node()]),
     PrefixIt = plumtree_metadata_manager:iterator(),
-    build(PrefixIt).
+    Res = build(PrefixIt),
+    _ = lager:info(
+        "Finished hashtree build at node ~p.", [node()]),
+    Res.
 
 %% @private
 build(PrefixIt) ->
