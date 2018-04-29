@@ -25,7 +25,6 @@
 -export([build_tree/3]).
 -export([integer_to_list/2]).
 -export([md5/1]).
--export([orddict_delta/2]).
 -export([sha/1]).
 
 %% USEFULL
@@ -39,8 +38,6 @@
 -export([mkclientid/1]).
 -export([safe_rpc/4]).
 -export([safe_rpc/5]).
--export([rpc_every_member/4]).
--export([rpc_every_member_ann/4]).
 -export([count/2]).
 
 -export([compose/1]).
@@ -413,23 +410,6 @@ safe_rpc(Node, Module, Function, Args, Timeout) ->
             {badrpc, rpc_process_down}
     end.
 
-%% @spec rpc_every_member(atom(), atom(), [term()], integer()|infinity)
-%%          -> {Results::[term()], BadNodes::[node()]}
-%% @doc Make an RPC call to the given module and function on each
-%%      member of the cluster.  See rpc:multicall/5 for a description
-%%      of the return value.
-rpc_every_member(Module, Function, Args, Timeout) ->
-    {ok, MyRing} = riak_core_ring_manager:get_my_ring(),
-    Nodes = riak_core_ring:all_members(MyRing),
-    rpc:multicall(Nodes, Module, Function, Args, Timeout).
-
-%% @doc Same as rpc_every_member/4, but annotate the result set with
-%%      the name of the node returning the result.
-rpc_every_member_ann(Module, Function, Args, Timeout) ->
-    {ok, MyRing} = riak_core_ring_manager:get_my_ring(),
-    Nodes = riak_core_ring:all_members(MyRing),
-    {Results, Down} = multicall_ann(Nodes, Module, Function, Args, Timeout),
-    {Results, Down}.
 
 %% @doc Perform an RPC call to a list of nodes in parallel, returning the
 %%      results in the same order as the input list.
@@ -513,28 +493,6 @@ build_tree(N, Nodes, Opts) ->
                     end, {[], tl(Expand)}, Nodes),
     orddict:from_list(Tree).
 
-orddict_delta(A, B) ->
-    %% Pad both A and B to the same length
-    DummyA = [{Key, '$none'} || {Key, _} <- B],
-    A2 = orddict:merge(fun(_, Value, _) ->
-                               Value
-                       end, A, DummyA),
-
-    DummyB = [{Key, '$none'} || {Key, _} <- A],
-    B2 = orddict:merge(fun(_, Value, _) ->
-                               Value
-                       end, B, DummyB),
-
-    %% Merge and filter out equal values
-    Merged = orddict:merge(fun(_, AVal, BVal) ->
-                                   {AVal, BVal}
-                           end, A2, B2),
-    Diff = orddict:filter(fun(_, {Same, Same}) ->
-                                  false;
-                             (_, _) ->
-                                  true
-                          end, Merged),
-    Diff.
 
 shuffle(L) ->
     N = 134217727, %% Largest small integer on 32-bit Erlang
